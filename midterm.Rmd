@@ -1,0 +1,40 @@
+---
+title: "Midterm"
+author: "Tillie Slosser"
+date: "2026-02-18"
+output: html_document
+---
+
+```{r setup, include=FALSE, message = FALSE, warnings = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# NOTE: this is a rough sketch of how we might lay out the final product based on the instructions, but we can change things around at any time. 
+
+## Section 1. Data Processing & Exploration
+
+here, we will read in the data, do some processing, and maybe a fun visualization
+
+```{r}
+df <- read.csv( './ID271_midterm/hou_pm.csv')
+```
+
+## Section 2. Methodology & Analysis
+
+here, we develop a model, explain why we are using it, and execute it/present results. We should answer the questions:\
+
+-   What distribution will you use for mortality? Specifically, think about the type of outcome we have (e.g., continuous, categorical, etc.).
+
+-   What covariates will you adjust for in your models, and how do you adjust for them (e.g., as a linear/binary/categorical variable or as a smooth function, etc)? If you decide to use a smooth function, pay close attention to the method you choose (and what's the default) and the df that is appropriate given the scientific question. Please justify your choices in your write up.
+
+## Section 3. 
+
+here, we analyze the results from Section 2. we should answer the questions:
+
+-   What are the dose-response curves of mortality (total, cardiovascular, and respiratory) with same-day PM2.5?
+
+-   Should temperature be included in the model? If so, what are the dose-response curves of mortality (total, cardiovascular, and respiratory) with same-day temperature.
+
+-   If the association is linear, what is the relative risk of (total, cardiovascular, and respiratory) mortality for a 10 $\mu g/m^{3}$ increase in PM2.5? If the association is non-linear, report the association is a manner that you think in appropriate. Keep in mind that trade-off between interpretability and accuracy of the results should be considered.
+
+-   (BONUS question): Adjusting for time trends and seasonality is a complicated question, as there are many ways to do so. If you wanted to fit a long spline, you essentially have two main methods covered in class: (1) adjusting for time using a penalized spline or (2) adjusting for time using a natural spline with 4 df per year. Which is preferred and why?
