@@ -9,32 +9,120 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-# NOTE: this is a rough sketch of how we might lay out the final product based on the instructions, but we can change things around at any time. 
+# NOTE: this is a rough sketch of how we might lay out the final product based on the instructions, but we can change things around at any time.
 
 ## Section 1. Data Processing & Exploration
 
 here, we will read in the data, do some processing, and maybe a fun visualization
 
 ```{r}
-df <- read.csv( './ID271_midterm/hou_pm.csv')
+library(tidyverse)
+library(knitr)
+library(mgcv)
+library(splines)
+
+#read in data
+df <- read.csv( './ID271_midterm/hou_pm.csv') |> 
+  drop_na() |> #drop NA observations now - we would drop them when 
+               # fitting models anyway, and this means that when calculating # of dfs to  
+               # adjust for time, we will have right number of data-giving years to count
+  mutate(date = mdy(date),
+         year = year(date),
+         date_num = as.numeric(date - min(date)+1))
 ```
 
 ## Section 2. Methodology & Analysis
 
 here, we develop a model, explain why we are using it, and execute it/present results. We should answer the questions:\
 
--   What distribution will you use for mortality? Specifically, think about the type of outcome we have (e.g., continuous, categorical, etc.).
+#### What distribution will you use for mortality? Specifically, think about the type of outcome we have (e.g., continuous, categorical, etc.).
 
--   What covariates will you adjust for in your models, and how do you adjust for them (e.g., as a linear/binary/categorical variable or as a smooth function, etc)? If you decide to use a smooth function, pay close attention to the method you choose (and what's the default) and the df that is appropriate given the scientific question. Please justify your choices in your write up.
+```{r}
+## Explore distribution of mortality
+# First, pivot the data for easier visualization within GGplot
+df_long <- df |> 
+  pivot_longer(cols= c('tot', 'cvd', 'resp'), 
+               names_to = 'death_cat',
+               values_to = 'death_count') |> 
+  mutate(death_cat = case_when(death_cat=='tot' ~ 'Total',
+                               death_cat=='cvd' ~ 'Cardiovascular',
+                               death_cat=='resp' ~ 'Respiratory')) 
+  #make plot
+  ggplot(df_long)+
+  geom_density(aes(x = death_count), color = '#82667F', fill = '#B486AB', alpha = 0.5) +
+  facet_wrap(~death_cat)+
+  labs(title = 'Daily Mortality in Houston',
+       x = 'Num. Deaths',
+       y = 'Density')+
+  theme_bw()
 
-## Section 3. 
+testing_quasipoisson <- df_long |> 
+  group_by(death_cat) |> 
+  summarise(Mean = mean(death_count),
+            Variance = var(death_count))
+
+kable(testing_quasipoisson, col.names = c('', 'Mean', 'Variance'))
+```
+
+Tillie thinks we should use (quasi) poisson just because it's count data, but we might want to mention how one might be able to argue that total mortality is normal-ish? Should we talk to Joel about this?
+
+Also, I (still tillie) generally default to assuming quasipoisson will be a better approximation of real life, but our means are pretty close to our variances, so we might want to reconsider\
+
+#### What covariates will you adjust for in your models, and how do you adjust for them (e.g., as a linear/binary/categorical variable or as a smooth function, etc)? If you decide to use a smooth function, pay close attention to the method you choose (and what's the default) and the df that is appropriate given the scientific question. Please justify your choices in your write up.
+
+```{r}
+num_years <- length(unique(df$year))
+
+# Make models
+tot_mod <- gam(tot ~ s(pm25) + # penalized spline for PM2.5, then adjust for...
+                     s(date_num, bs = "cr",fx=TRUE,k=num_years*4+1) + #time: fixed cubic spline
+                     s(TEMP, bs = "cr", fx=FALSE) + #temperature, penalized
+                     s(RH, bs = "cr", fx=FALSE) + #relative humidity, penalized
+                     as.factor(dow), #factor: day of week
+               family=quasipoisson,
+               data=df
+               )
+
+cvd_mod <- gam(cvd ~ s(pm25) + # penalized spline for PM2.5, then adjust for...
+                     s(date_num, bs = "cr",fx=TRUE,k=num_years*4+1) + #time: fixed cubic spline
+                     s(TEMP, bs = "cr", fx=FALSE) + #temperature, penalized
+                     s(RH, bs = "cr", fx=FALSE) + #relative humidity, penalized
+                     as.factor(dow), #factor: day of week
+               family=quasipoisson,
+               data=df
+               )
+
+resp_mod <- gam(resp ~ s(pm25) + # penalized spline for PM2.5, then adjust for...
+                     s(date_num, bs = "cr",fx=TRUE,k=num_years*4+1) + #time: fixed cubic spline
+                     s(TEMP, bs = "cr", fx=FALSE) + #temperature, penalized
+                     s(RH, bs = "cr", fx=FALSE) + #relative humidity, penalized
+                     as.factor(dow), #factor: day of week
+               family=quasipoisson,
+               data=df
+               )
+
+
+```
+
+## Section 3.
 
 here, we analyze the results from Section 2. we should answer the questions:
 
--   What are the dose-response curves of mortality (total, cardiovascular, and respiratory) with same-day PM2.5?
+#### What are the dose-response curves of mortality (total, cardiovascular, and respiratory) with same-day PM2.5?
 
--   Should temperature be included in the model? If so, what are the dose-response curves of mortality (total, cardiovascular, and respiratory) with same-day temperature.
+```{r}
+plot(tot_mod, select = 1)
+title('Effect of PM2.5 on Daily Total Mortality')
 
--   If the association is linear, what is the relative risk of (total, cardiovascular, and respiratory) mortality for a 10 $\mu g/m^{3}$ increase in PM2.5? If the association is non-linear, report the association is a manner that you think in appropriate. Keep in mind that trade-off between interpretability and accuracy of the results should be considered.
+plot(cvd_mod, select = 1)
+title('Effect of PM2.5 on Daily Cardiovascular Mortality')
 
--   (BONUS question): Adjusting for time trends and seasonality is a complicated question, as there are many ways to do so. If you wanted to fit a long spline, you essentially have two main methods covered in class: (1) adjusting for time using a penalized spline or (2) adjusting for time using a natural spline with 4 df per year. Which is preferred and why?
+plot(resp_mod, select = 1)
+title('Effect of PM2.5 on Daily Respiratory Mortality')
+```
+
+#### Should temperature be included in the model? If so, what are the dose-response curves of mortality (total, cardiovascular, and respiratory) with same-day temperature.
+
+#### If the association is linear, what is the relative risk of (total, cardiovascular, and respiratory) mortality for a 10 $\mu g/m^{3}$ increase in PM2.5? If the association is non-linear, report the association is a manner that you think in appropriate. Keep in mind that trade-off between interpretability and accuracy of the results should be considered.
+
+#### (BONUS question): Adjusting for time trends and seasonality is a complicated question, as there are many ways to do so. If you wanted to fit a long spline, you essentially have two main methods covered in class: (1) adjusting for time using a penalized spline or (2) adjusting for time using a natural spline with 4 df per year. Which is preferred and why?
