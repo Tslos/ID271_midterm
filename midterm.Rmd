@@ -77,34 +77,21 @@ Also, I (still tillie) generally default to assuming quasipoisson will be a bett
 ```{r}
 num_years <- length(unique(df$year))
 
-# Make models
-tot_mod <- gam(tot ~ s(pm25) + # penalized spline for PM2.5, then adjust for...
-                     s(date_num, bs = "cr",fx=TRUE,k=num_years*4+1) + #time: fixed cubic spline
-                     s(TEMP, bs = "cr", fx=FALSE) + #temperature, penalized
-                     s(RH, bs = "cr", fx=FALSE) + #relative humidity, penalized
-                     as.factor(dow), #factor: day of week
-               family=quasipoisson,
-               data=df
-               )
+make_baseline_spline_mod <- function(outcome, df) {
+  formula = as.formula(paste(outcome, '~', 
+                             's(pm25) + # penalized spline for PM2.5, then adjust for...
+                             s(date_num, bs = "cr",
+                             fx=TRUE,k=num_years*4+1) + #time: fixed cubic spline
+                             s(TEMP, bs = "cr", fx=FALSE) + #temperature, penalized
+                             s(RH, bs = "cr", fx=FALSE) + #relative humidity, penalized
+                             as.factor(dow)'))
+  model <-  gam(formula, family=quasipoisson, data=df)
+  return(model)
+}
 
-cvd_mod <- gam(cvd ~ s(pm25) + # penalized spline for PM2.5, then adjust for...
-                     s(date_num, bs = "cr",fx=TRUE,k=num_years*4+1) + #time: fixed cubic spline
-                     s(TEMP, bs = "cr", fx=FALSE) + #temperature, penalized
-                     s(RH, bs = "cr", fx=FALSE) + #relative humidity, penalized
-                     as.factor(dow), #factor: day of week
-               family=quasipoisson,
-               data=df
-               )
-
-resp_mod <- gam(resp ~ s(pm25) + # penalized spline for PM2.5, then adjust for...
-                     s(date_num, bs = "cr",fx=TRUE,k=num_years*4+1) + #time: fixed cubic spline
-                     s(TEMP, bs = "cr", fx=FALSE) + #temperature, penalized
-                     s(RH, bs = "cr", fx=FALSE) + #relative humidity, penalized
-                     as.factor(dow), #factor: day of week
-               family=quasipoisson,
-               data=df
-               )
-
+tot_mod <- make_baseline_spline_mod('tot', df)
+cvd_mod <- make_baseline_spline_mod('cvd', df)
+resp_mod <- make_baseline_spline_mod('resp', df)
 
 ```
 
@@ -128,4 +115,101 @@ title('Effect of PM2.5 on Daily Cardiovascular Mortality')
 
 plot(resp_mod, select = 1)
 title('Effect of PM2.5 on Daily Respiratory Mortality')
+```
+
+```{r}
+# evaluate model fit via a residuals vs fitted plot: do we predict all values equally well?
+
+get_preds_all_mods <- function(mod_list, mod_names, base_df) {
+  final_pred_df <- data.frame(matrix(ncol = 5, nrow = 0))
+  colnames(final_pred_df) <- c('true', 'date','res', 'fit', 'model')
+  for (i in seq_along(mod_list)){
+    mod_preds <- data.frame(true = mod_list[[i]]$y,
+                      date = base_df$date, 
+                      res = mod_list[[i]]$residuals, 
+                      fit = mod_list[[i]]$fitted.values, 
+                      model = rep(mod_names[[i]], nrow(base_df)))
+    final_pred_df <- rbind(final_pred_df, mod_preds)
+  }
+  return(final_pred_df)
+}
+
+pred_df <- get_preds_all_mods(list(tot_mod, cvd_mod, resp_mod), 
+                              c('Total', 'Cardiovascular', 'Respiratory'),
+                              df)
+
+ggplot(pred_df, aes(x = fit, y = res))+
+  geom_point(alpha = 0.5, color = '#82667F') +
+  facet_wrap(~model, scales = 'free') +
+  labs(title = 'Fitted vs Residuals by Death Type',
+       subtitle = 'PM2.5 and Temp are penalized splines')+
+  theme_bw()
+
+ggplot(pred_df)+
+  geom_point(aes(x = date, y = true), alpha = 0.5, color = '#82667F') +
+  geom_line(aes(x = date, y = fit)) + 
+  facet_wrap(~model, scales = 'free', nrow=3) +
+  labs(title = 'Actual vs Predicted by Death Type',
+       subtitle = 'PM2.5 and Temp are penalized splines')+
+  theme_bw()
+```
+
+## Attempting a Distributed Lag model
+
+```{r}
+df_lags <- df |> 
+  mutate( #lag PM2.5
+         pm_l0 = pm25,
+         pm_l1 = lag(pm25, 1),
+         pm_l2 = lag(pm25, 2),
+         pm_l3 = lag(pm25, 3),
+         pm_l4 = lag(pm25, 4),
+         pm_l5 = lag(pm25, 5), 
+         #lag temperature
+         temp_l0 = TEMP,
+         temp_l1 = lag(TEMP, 1),
+         temp_l2 = lag(TEMP, 2),
+         temp_l3 = lag(TEMP, 3),
+         temp_l4 = lag(TEMP, 4),
+         temp_l5 = lag(TEMP, 5)
+         ) |> 
+  drop_na()
+
+
+make_lag_mod <- function(outcome, df) {
+  formula = as.formula(paste(outcome, '~', 
+                             '# linear terms for lagged pm2.5
+                             pm_l0 + pm_l1 + pm_l2 + pm_l3 + pm_l4 + pm_l5 +
+                             # linear terms for lagged temperature
+                             temp_l0 + temp_l1 + temp_l2 + temp_l3 + temp_l4 + temp_l5 +
+                             #time: fixed cubic spline
+                             s(date_num, bs = "cr", fx=TRUE,k=num_years*4+1) + 
+                             s(RH, bs = "cr", fx=FALSE) + #relative humidity, penalized
+                             as.factor(dow)'))
+  model <-  gam(formula, family=quasipoisson, data=df)
+  return(model)
+}
+
+tot_lag_mod <- make_lag_mod('tot', df_lags)
+cvd_lag_mod <- make_lag_mod('cvd', df_lags)
+resp_lag_mod <- make_lag_mod('resp', df_lags)
+
+pred_lag_df <- get_preds_all_mods(list(tot_lag_mod, cvd_lag_mod, resp_lag_mod), 
+                              c('Total', 'Cardiovascular', 'Respiratory'),
+                              df_lags)
+
+ggplot(pred_lag_df, aes(x = fit, y = res))+
+  geom_point(alpha = 0.5, color = '#82667F') +
+  facet_wrap(~model, scales = 'free') +
+  labs(title = 'Fitted vs Residuals by Death Type', 
+       subtitle = 'PM2.5 and Temp are linear terms, up to lag 5')+
+  theme_bw()
+
+ggplot(pred_lag_df)+
+  geom_point(aes(x = date, y = true), alpha = 0.5, color = '#82667F') +
+  geom_line(aes(x = date, y = fit)) + 
+  facet_wrap(~model, scales = 'free', nrow=3) +
+  labs(title = 'Actual vs Predicted by Death Type', 
+       subtitle = 'PM2.5 and Temp are linear terms, up to lag 5')+
+  theme_bw()
 ```
