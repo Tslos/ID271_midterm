@@ -33,9 +33,15 @@ df <- read.csv( './ID271_midterm/hou_pm.csv') |>
 
 ## Section 2. Methodology & Analysis
 
-here, we develop a model, explain why we are using it, and execute it/present results. We should answer the questions:\
+#### Outline, for the sake of making sure our methods line up with the analysis we want to do:
 
-#### What distribution will you use for mortality? Specifically, think about the type of outcome we have (e.g., continuous, categorical, etc.).
+-   Talking about the data paragraph: what we've got, what covariates we are including (all of em)
+-   Sentence about time series data, why they are hard to deal with, e.g. they have long & short term temporal trends, seasonality, day of the week, etc etc. Possibly even direct quote the example he keeps bringing up about "more people die in the winter, so if you look at something that is summer-specific, it will look protective without proper adjustment for season"
+-   Sentence about how deaths are count data, ergo we should use the Poisson distribution. Option sentence about using quasipoisson distribution if we decide that
+-   Sentence about how splines are neat and let us make fewer assumptions, then mention that we fit penalized splines to our exposure (PM2.5) and non-date continuous covariates(temp, relative humid) and fit a spline with 4 degrees of freedom per year for date to capture seasonal variation
+    -   answer the bonus question by talking about how fitting a spline for time with 4 df per year is preferred because it avoids over complicating the model (not too wiggly) via incorporating physical knowledge that there are 4 seasons in a year (at least in the US, we are not getting into the whole "dry vs wet" season modeling conundrum)
+-   Brief mention that we include day of week as a factor, because workday = commuters = more cars = more pm2.5
+-   Small aside about how we are including temperature because it can influence daily death in the short-term (e.g. heat wave / cold snap), so we want to include it so that we can make sure that our estimate for PM2.5 is not accidentally capturing the effect of temperature instead.
 
 ```{r}
 ## Explore distribution of mortality
@@ -67,8 +73,6 @@ kable(testing_quasipoisson, col.names = c('', 'Mean', 'Variance'))
 Tillie thinks we should use (quasi) poisson just because it's count data, but we might want to mention how one might be able to argue that total mortality is normal-ish? Should we talk to Joel about this?
 
 Also, I (still tillie) generally default to assuming quasipoisson will be a better approximation of real life, but our means are pretty close to our variances, so we might want to reconsider\
-
-#### What covariates will you adjust for in your models, and how do you adjust for them (e.g., as a linear/binary/categorical variable or as a smooth function, etc)? If you decide to use a smooth function, pay close attention to the method you choose (and what's the default) and the df that is appropriate given the scientific question. Please justify your choices in your write up.
 
 ```{r}
 num_years <- length(unique(df$year))
@@ -106,11 +110,16 @@ resp_mod <- gam(resp ~ s(pm25) + # penalized spline for PM2.5, then adjust for..
 
 ## Section 3.
 
-here, we analyze the results from Section 2. we should answer the questions:
+#### Outline, for the sake of making sure our methods line up with the analysis we want to do:
 
-#### What are the dose-response curves of mortality (total, cardiovascular, and respiratory) with same-day PM2.5?
+-   Talk about the dose-response curves (plotted below).
+
+-   report RR or other descriptor of association for 10 $\mu g/m^{3}$ increase in PM2.5 for each type of death - calculations TBD once we decide on a final model.
+
+-   If we settle on a model that does not do lagged PM, then talk about how we made the assumption that PM only has a same-day effect, which isn't realistic but makes modeling easier.
 
 ```{r}
+#plotting the dose-responses
 plot(tot_mod, select = 1)
 title('Effect of PM2.5 on Daily Total Mortality')
 
@@ -120,9 +129,3 @@ title('Effect of PM2.5 on Daily Cardiovascular Mortality')
 plot(resp_mod, select = 1)
 title('Effect of PM2.5 on Daily Respiratory Mortality')
 ```
-
-#### Should temperature be included in the model? If so, what are the dose-response curves of mortality (total, cardiovascular, and respiratory) with same-day temperature.
-
-#### If the association is linear, what is the relative risk of (total, cardiovascular, and respiratory) mortality for a 10 $\mu g/m^{3}$ increase in PM2.5? If the association is non-linear, report the association is a manner that you think in appropriate. Keep in mind that trade-off between interpretability and accuracy of the results should be considered.
-
-#### (BONUS question): Adjusting for time trends and seasonality is a complicated question, as there are many ways to do so. If you wanted to fit a long spline, you essentially have two main methods covered in class: (1) adjusting for time using a penalized spline or (2) adjusting for time using a natural spline with 4 df per year. Which is preferred and why?
